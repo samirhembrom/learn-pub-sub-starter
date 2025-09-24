@@ -1,7 +1,28 @@
 package main
 
-import "fmt"
+import (
+	"log"
+	"os"
+	"os/signal"
+
+	amqp "github.com/rabbitmq/amqp091-go"
+)
+
+const connUrl = "amqp://guest:guest@localhost:5672/"
 
 func main() {
-	fmt.Println("Starting Peril server...")
+	conn, err := amqp.Dial(connUrl)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+
+	defer conn.Close()
+
+	log.Printf("Connention was successful")
+
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt)
+	<-signalChan
+	log.Printf("Connection is closing")
 }
