@@ -31,7 +31,19 @@ func main() {
 		log.Fatal(err)
 	}
 
+	_, _, err = pubsub.DeclareAndBind(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.GameLogSlug,
+		routing.GameLogSlug+".*",
+		0,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	gamelogic.PrintServerHelp()
+loop:
 	for {
 		input := gamelogic.GetInput()
 		if len(input) == 0 {
@@ -57,6 +69,7 @@ func main() {
 			)
 		case "quit":
 			fmt.Print("Exiting")
+			break loop
 
 		default:
 			fmt.Print("Unknown command")
