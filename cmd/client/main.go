@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -39,6 +40,33 @@ func main() {
 	)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	gameState := gamelogic.NewGameState(name)
+loop:
+	for {
+		input := gamelogic.GetInput()
+		if len(input) == 0 {
+			continue
+		}
+		switch input[0] {
+		case "spawn":
+			gameState.CommandSpawn(input)
+		case "move":
+			gameState.CommandMove(input)
+		case "status":
+			gameState.CommandStatus()
+		case "help":
+			gamelogic.PrintClientHelp()
+		case "spam":
+			fmt.Print("Spamming not allowed yet!\n")
+		case "quit":
+			gamelogic.PrintQuit()
+			break loop
+		default:
+			fmt.Print("Invalid command\n")
+
+		}
 	}
 
 	signalChan := make(chan os.Signal, 1)
