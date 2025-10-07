@@ -51,6 +51,18 @@ func main() {
 		1,
 		handlerPause(gameState),
 	)
+	pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilTopic,
+		"army_moves."+name,
+		routing.ArmyMovesPrefix+".*",
+		1,
+		func(m gamelogic.ArmyMove) {
+			defer fmt.Print("> ")
+			gameState.HandleMove(m)
+		},
+	)
+
 loop:
 	for {
 		input := gamelogic.GetInput()
@@ -61,7 +73,28 @@ loop:
 		case "spawn":
 			gameState.CommandSpawn(input)
 		case "move":
-			gameState.CommandMove(input)
+			move, err := gameState.CommandMove(input)
+			if err != nil {
+				log.Printf("move build failed: %v", err)
+				break
+			}
+			ch, err := conn.Channel()
+			if err != nil {
+				log.Printf("channel open failed: %v", err)
+				break
+			}
+			defer ch.Close()
+
+			if err := pubsub.PublishJSON(
+				ch,
+				routing.ExchangePerilTopic,
+				routing.ArmyMovesPrefix+"."+name,
+				move,
+			); err != nil {
+				log.Printf("publish failed: %v", err)
+				break
+			}
+			log.Printf("published move to %s", routing.ArmyMovesPrefix+"."+name)
 		case "status":
 			gameState.CommandStatus()
 		case "help":
