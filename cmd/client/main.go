@@ -43,6 +43,14 @@ func main() {
 	}
 
 	gameState := gamelogic.NewGameState(name)
+	pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilDirect,
+		"pause."+name,
+		routing.PauseKey,
+		1,
+		handlerPause(gameState),
+	)
 loop:
 	for {
 		input := gamelogic.GetInput()
@@ -73,4 +81,11 @@ loop:
 	signal.Notify(signalChan, os.Interrupt)
 	<-signalChan
 	log.Printf("Connection is closing")
+}
+
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	return func(ps routing.PlayingState) {
+		defer fmt.Print("> ")
+		gs.HandlePause(ps)
+	}
 }
