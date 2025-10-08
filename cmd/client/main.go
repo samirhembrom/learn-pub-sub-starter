@@ -45,21 +45,17 @@ func main() {
 	gameState := gamelogic.NewGameState(name)
 	pubsub.SubscribeJSON(
 		conn,
-		routing.ExchangePerilDirect,
-		"pause."+name,
-		routing.PauseKey,
-		1,
-		handlerPause(gameState),
-	)
-	pubsub.SubscribeJSON(
-		conn,
 		routing.ExchangePerilTopic,
 		"army_moves."+name,
 		routing.ArmyMovesPrefix+".*",
 		1,
-		func(m gamelogic.ArmyMove) {
+		func(m gamelogic.ArmyMove) pubsub.AckType {
 			defer fmt.Print("> ")
-			gameState.HandleMove(m)
+			outcome := gameState.HandleMove(m)
+			if outcome == gamelogic.MoveOutComeSafe || outcome == gamelogic.MoveOutcomeMakeWar {
+				return pubsub.Ack
+			}
+			return pubsub.NackDiscard
 		},
 	)
 
@@ -116,9 +112,10 @@ loop:
 	log.Printf("Connection is closing")
 }
 
-func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
-	return func(ps routing.PlayingState) {
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) pubsub.AckType {
+	return func(ps routing.PlayingState) pubsub.AckType {
 		defer fmt.Print("> ")
 		gs.HandlePause(ps)
+		return pubsub.Ack
 	}
 }

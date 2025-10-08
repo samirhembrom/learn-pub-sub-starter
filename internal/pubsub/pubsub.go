@@ -70,13 +70,21 @@ func DeclareAndBind(
 	return ch, que, nil
 }
 
+type AckType int
+
+const (
+	Ack AckType = iota
+	NackRequeue
+	NackDiscard
+)
+
 func SubscribeJSON[T any](
 	conn *amqp.Connection,
 	exchange,
 	queueName,
 	key string,
 	queueType SimpleQueueType,
-	handler func(T),
+	handler func(T) AckType,
 ) error {
 	ch, _, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
@@ -88,11 +96,21 @@ func SubscribeJSON[T any](
 	}
 	for ele := range dlvCh {
 		var out T
-		if err := json.Unmarshal(ele.Body, out); err != nil {
+		if err := json.Unmarshal(ele.Body, &out); err != nil {
 			return err
 		}
-		handler(out)
-		ele.Ack(false)
+		ack := handler(out)
+		switch ack {
+		case Ack:
+			ele.Ack(false)
+			fmt.Print("Acknowlegment")
+		case NackRequeue:
+			ele.Nack(false, true)
+			fmt.Print("Nack requeue")
+		case NackDiscard:
+			ele.Nack(false, false)
+			fmt.Print("Nack dicard")
+		}
 	}
 	return nil
 }
