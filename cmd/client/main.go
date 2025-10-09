@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
@@ -13,109 +11,93 @@ import (
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 )
 
-const connUrl = "amqp://guest:guest@localhost:5672/"
-
 func main() {
-	conn, err := amqp.Dial(connUrl)
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
+	fmt.Println("Starting Peril client...")
+	const rabbitConnString = "amqp://guest:guest@localhost:5672/"
 
+	conn, err := amqp.Dial(rabbitConnString)
+	if err != nil {
+		log.Fatalf("could not connect to RabbitMQ: %v", err)
+	}
 	defer conn.Close()
+	fmt.Println("Peril game client connected to RabbitMQ!")
 
-	log.Printf("Connention was successful")
-
-	name, err := gamelogic.ClientWelcome()
+	publishCh, err := conn.Channel()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("could not create channel: %v", err)
 	}
 
-	_, _, err = pubsub.DeclareAndBind(
-		conn,
-		routing.ExchangePerilDirect,
-		"pause."+name,
-		routing.PauseKey,
-		1,
-	)
+	username, err := gamelogic.ClientWelcome()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("could not get username: %v", err)
 	}
+	gs := gamelogic.NewGameState(username)
 
-	gameState := gamelogic.NewGameState(name)
-	pubsub.SubscribeJSON(
+	err = pubsub.SubscribeJSON(
 		conn,
 		routing.ExchangePerilTopic,
-		"army_moves."+name,
+		routing.ArmyMovesPrefix+"."+gs.GetUsername(),
 		routing.ArmyMovesPrefix+".*",
-		1,
-		func(m gamelogic.ArmyMove) pubsub.AckType {
-			defer fmt.Print("> ")
-			outcome := gameState.HandleMove(m)
-			if outcome == gamelogic.MoveOutComeSafe || outcome == gamelogic.MoveOutcomeMakeWar {
-				return pubsub.Ack
-			}
-			return pubsub.NackDiscard
-		},
+		pubsub.SimpleQueueTransient,
+		handlerMove(gs),
 	)
+	if err != nil {
+		log.Fatalf("could not subscribe to army moves: %v", err)
+	}
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilDirect,
+		routing.PauseKey+"."+gs.GetUsername(),
+		routing.PauseKey,
+		pubsub.SimpleQueueTransient,
+		handlerPause(gs),
+	)
+	if err != nil {
+		log.Fatalf("could not subscribe to pause: %v", err)
+	}
 
-loop:
 	for {
-		input := gamelogic.GetInput()
-		if len(input) == 0 {
+		words := gamelogic.GetInput()
+		if len(words) == 0 {
 			continue
 		}
-		switch input[0] {
-		case "spawn":
-			gameState.CommandSpawn(input)
+		switch words[0] {
 		case "move":
-			move, err := gameState.CommandMove(input)
+			mv, err := gs.CommandMove(words)
 			if err != nil {
-				log.Printf("move build failed: %v", err)
-				break
+				fmt.Println(err)
+				continue
 			}
-			ch, err := conn.Channel()
-			if err != nil {
-				log.Printf("channel open failed: %v", err)
-				break
-			}
-			defer ch.Close()
 
-			if err := pubsub.PublishJSON(
-				ch,
+			err = pubsub.PublishJSON(
+				publishCh,
 				routing.ExchangePerilTopic,
-				routing.ArmyMovesPrefix+"."+name,
-				move,
-			); err != nil {
-				log.Printf("publish failed: %v", err)
-				break
+				routing.ArmyMovesPrefix+"."+mv.Player.Username,
+				mv,
+			)
+			if err != nil {
+				fmt.Printf("error: %s\n", err)
+				continue
 			}
-			log.Printf("published move to %s", routing.ArmyMovesPrefix+"."+name)
+			fmt.Printf("Moved %v units to %s\n", len(mv.Units), mv.ToLocation)
+		case "spawn":
+			err = gs.CommandSpawn(words)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
 		case "status":
-			gameState.CommandStatus()
+			gs.CommandStatus()
 		case "help":
 			gamelogic.PrintClientHelp()
 		case "spam":
-			fmt.Print("Spamming not allowed yet!\n")
+			// TODO: publish n malicious logs
+			fmt.Println("Spamming not allowed yet!")
 		case "quit":
 			gamelogic.PrintQuit()
-			break loop
+			return
 		default:
-			fmt.Print("Invalid command\n")
-
+			fmt.Println("unknown command")
 		}
-	}
-
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
-	<-signalChan
-	log.Printf("Connection is closing")
-}
-
-func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) pubsub.AckType {
-	return func(ps routing.PlayingState) pubsub.AckType {
-		defer fmt.Print("> ")
-		gs.HandlePause(ps)
-		return pubsub.Ack
 	}
 }

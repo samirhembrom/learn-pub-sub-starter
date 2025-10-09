@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
@@ -13,71 +11,72 @@ import (
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 )
 
-const connUrl = "amqp://guest:guest@localhost:5672/"
-
 func main() {
-	conn, err := amqp.Dial(connUrl)
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
+	const rabbitConnString = "amqp://guest:guest@localhost:5672/"
 
+	conn, err := amqp.Dial(rabbitConnString)
+	if err != nil {
+		log.Fatalf("could not connect to RabbitMQ: %v", err)
+	}
 	defer conn.Close()
+	fmt.Println("Peril game server connected to RabbitMQ!")
 
-	log.Printf("Connention was successful")
-
-	ch, err := conn.Channel()
+	publishCh, err := conn.Channel()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("could not create channel: %v", err)
 	}
 
-	_, _, err = pubsub.DeclareAndBind(
+	_, queue, err := pubsub.DeclareAndBind(
 		conn,
 		routing.ExchangePerilTopic,
 		routing.GameLogSlug,
 		routing.GameLogSlug+".*",
-		0,
+		pubsub.SimpleQueueDurable,
 	)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("could not subscribe to pause: %v", err)
 	}
+	fmt.Printf("Queue %v declared and bound!\n", queue.Name)
 
 	gamelogic.PrintServerHelp()
-loop:
+
 	for {
-		input := gamelogic.GetInput()
-		if len(input) == 0 {
+		words := gamelogic.GetInput()
+		if len(words) == 0 {
 			continue
 		}
-		switch input[0] {
+		switch words[0] {
 		case "pause":
-			fmt.Print("Sending PAUSE msg")
-			pubsub.PublishJSON(
-				ch,
+			fmt.Println("Publishing paused game state")
+			err = pubsub.PublishJSON(
+				publishCh,
 				routing.ExchangePerilDirect,
 				routing.PauseKey,
-				routing.PlayingState{IsPaused: true},
+				routing.PlayingState{
+					IsPaused: true,
+				},
 			)
-
+			if err != nil {
+				log.Printf("could not publish time: %v", err)
+			}
 		case "resume":
-			fmt.Print("Sending RESUME msg")
-			pubsub.PublishJSON(
-				ch,
+			fmt.Println("Publishing resumes game state")
+			err = pubsub.PublishJSON(
+				publishCh,
 				routing.ExchangePerilDirect,
 				routing.PauseKey,
-				routing.PlayingState{IsPaused: false},
+				routing.PlayingState{
+					IsPaused: false,
+				},
 			)
+			if err != nil {
+				log.Printf("could not publish time: %v", err)
+			}
 		case "quit":
-			fmt.Print("Exiting")
-			break loop
-
+			log.Println("goodbye")
+			return
 		default:
-			fmt.Print("Unknown command")
+			fmt.Println("unknown command")
 		}
 	}
-
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
-	<-signalChan
-	log.Printf("Connection is closing")
 }
