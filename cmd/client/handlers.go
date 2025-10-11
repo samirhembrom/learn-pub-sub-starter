@@ -32,7 +32,7 @@ func handlerMove(
 				fmt.Printf("error: %v\n", err)
 				return pubsub.NackRequeue
 			}
-			return pubsub.NackRequeue
+			return pubsub.Ack
 		}
 		fmt.Println("error: unknown move outcome")
 		return pubsub.NackDiscard
