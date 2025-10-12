@@ -47,7 +47,6 @@ func main() {
 		routing.GameLogSlug+".*",
 		pubsub.SimpleQueueDurable,
 		func(ev routing.GameLog) pubsub.Acktype {
-			defer gamelogic.PrintServerHelp()
 			if err := gamelogic.WriteLog(ev); err != nil {
 				return pubsub.NackDiscard
 			}
