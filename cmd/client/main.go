@@ -62,7 +62,7 @@ func main() {
 		"war",
 		routing.WarRecognitionsPrefix+".#",
 		0,
-		handlerWar(gs),
+		handlerWar(gs, publishCh),
 	)
 	if err != nil {
 		log.Fatalf("could not subsribe to war: %v", err)
