@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
@@ -103,8 +104,27 @@ func main() {
 		case "help":
 			gamelogic.PrintClientHelp()
 		case "spam":
-			// TODO: publish n malicious logs
-			fmt.Println("Spamming not allowed yet!")
+			if len(words) < 2 {
+				fmt.Print("not enough words")
+				continue
+			}
+			n, err := strconv.Atoi(words[1])
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			for i := 0; i < n; i++ {
+				msg := gamelogic.GetMaliciousLog()
+				key := routing.GameLogSlug + "." + gs.GetUsername()
+				gl := pubsub.PublishGameLog(
+					msg,
+					gs.GetUsername(),
+				)
+				err := pubsub.PublishGob(publishCh, routing.ExchangePerilTopic, key, gl)
+				if err != nil {
+					fmt.Println(err)
+				}
+			}
 		case "quit":
 			gamelogic.PrintQuit()
 			return
